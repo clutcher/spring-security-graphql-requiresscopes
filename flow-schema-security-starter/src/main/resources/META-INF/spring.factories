@@ -1,0 +1,1 @@
+org.springframework.graphql.execution.RuntimeWiringConfigurer=com.abb.flow.schemasecurity.starter.SchemaSecurityConfigurer
