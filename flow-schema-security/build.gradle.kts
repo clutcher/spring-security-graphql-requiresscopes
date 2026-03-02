@@ -2,11 +2,11 @@ project.description = "Core library for feature-based access control on the Grap
 
 dependencies {
     compileOnly("org.springframework.security:spring-security-core")
-    compileOnly("org.springframework.graphql:spring-graphql")
-    compileOnly("com.graphql-java:graphql-java")
+    compileOnly("org.springframework.security:spring-security-oauth2-resource-server")
+    compileOnly("org.springframework.security:spring-security-oauth2-jose")
 
     testImplementation("org.springframework.security:spring-security-core")
-    testImplementation("org.springframework.graphql:spring-graphql")
-    testImplementation("com.graphql-java:graphql-java")
+    testImplementation("org.springframework.security:spring-security-oauth2-resource-server")
+    testImplementation("org.springframework.security:spring-security-oauth2-jose")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
