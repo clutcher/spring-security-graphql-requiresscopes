@@ -1,11 +1,11 @@
-project.description = "Spring Boot starter for flow-schema-security library."
+project.description = "Spring Boot starter for spring-security-graphql-requiresscopes library."
 
 plugins {
     id("java-library")
 }
 
 dependencies {
-    api(project(":flow-schema-security"))
+    api(project(":spring-security-graphql-requiresscopes"))
 
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.security:spring-security-oauth2-resource-server")

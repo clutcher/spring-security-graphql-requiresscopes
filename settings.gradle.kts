@@ -1,5 +1,6 @@
-rootProject.name = "flow-schema-security"
+rootProject.name = "spring-security-graphql-requiresscopes"
+
 include(
-    "flow-schema-security",
-    "flow-schema-security-starter"
+    "spring-security-graphql-requiresscopes",
+    "spring-security-graphql-requiresscopes-starter"
 )

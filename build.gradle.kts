@@ -8,7 +8,7 @@ plugins {
 extra["springBootVersion"] = "4.0.2"
 
 allprojects {
-    group = "com.abb.flow"
+    group = "dev.clutcher.security"
     version = "1.0.0"
 }
 
