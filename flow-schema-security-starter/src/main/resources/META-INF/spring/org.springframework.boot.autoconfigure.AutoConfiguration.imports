@@ -1,1 +1,1 @@
-com.abb.flow.schemasecurity.starter.SchemaSecurityAutoConfiguration
+dev.clutcher.security.graphql.starter.SchemaSecurityAutoConfiguration

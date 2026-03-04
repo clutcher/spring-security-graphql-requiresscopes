@@ -4,9 +4,11 @@ dependencies {
     compileOnly("org.springframework.security:spring-security-core")
     compileOnly("org.springframework.security:spring-security-oauth2-resource-server")
     compileOnly("org.springframework.security:spring-security-oauth2-jose")
+    compileOnly("com.graphql-java:graphql-java:25.0")
 
     testImplementation("org.springframework.security:spring-security-core")
     testImplementation("org.springframework.security:spring-security-oauth2-resource-server")
     testImplementation("org.springframework.security:spring-security-oauth2-jose")
+    testImplementation("com.graphql-java:graphql-java:25.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
