@@ -1,6 +1,6 @@
 package dev.clutcher.security.graphql.instrumentation;
 
-import dev.clutcher.security.graphql.ClaimChecker;
+import dev.clutcher.security.graphql.strategy.ScopeCheckStrategy;
 import graphql.execution.instrumentation.InstrumentationState;
 import graphql.execution.instrumentation.parameters.InstrumentationFieldFetchParameters;
 import graphql.execution.instrumentation.SimplePerformantInstrumentation;
@@ -20,12 +20,9 @@ import java.util.List;
  * time — no per-controller annotations required.
  *
  * <p>For each field fetch, the instrumentation checks whether the resolved field carries a
- * {@code @requiresScopes} applied directive. If it does, the authenticated user's JWT is
- * inspected using two {@link ClaimChecker} instances — one per scope type prefix:
- * <ul>
- *   <li>Scopes prefixed with {@code feature:} are checked against the {@code enabledFeatures} JWT claim.</li>
- *   <li>Scopes prefixed with {@code role:} are checked against the {@code roles} JWT claim.</li>
- * </ul>
+ * {@code @requiresScopes} applied directive. If it does, the scope values are evaluated
+ * against the current {@link Authentication} using a list of {@link ScopeCheckStrategy}
+ * instances. A scope passes if <em>any</em> strategy returns {@code true} for it.
  *
  * <p>The {@code scopes} argument follows Apollo Federation semantics:
  * <ul>
@@ -40,15 +37,11 @@ public class RequiresScopesInstrumentation extends SimplePerformantInstrumentati
 
     private static final String DIRECTIVE_NAME = "requiresScopes";
     private static final String SCOPES_ARGUMENT = "scopes";
-    private static final String FEATURE_PREFIX = "feature:";
-    private static final String ROLE_PREFIX = "role:";
 
-    private final ClaimChecker featureChecker;
-    private final ClaimChecker roleChecker;
+    private final List<ScopeCheckStrategy> strategies;
 
-    public RequiresScopesInstrumentation(ClaimChecker featureChecker, ClaimChecker roleChecker) {
-        this.featureChecker = featureChecker;
-        this.roleChecker = roleChecker;
+    public RequiresScopesInstrumentation(List<ScopeCheckStrategy> strategies) {
+        this.strategies = strategies;
     }
 
     @Override
@@ -120,12 +113,6 @@ public class RequiresScopesInstrumentation extends SimplePerformantInstrumentati
     }
 
     private boolean checkScope(Authentication authentication, String scope) {
-        if (scope.startsWith(FEATURE_PREFIX)) {
-            return featureChecker.has(authentication, scope.substring(FEATURE_PREFIX.length()));
-        }
-        if (scope.startsWith(ROLE_PREFIX)) {
-            return roleChecker.has(authentication, scope.substring(ROLE_PREFIX.length()));
-        }
-        return false;
+        return strategies.stream().anyMatch(s -> s.check(authentication, scope));
     }
 }
