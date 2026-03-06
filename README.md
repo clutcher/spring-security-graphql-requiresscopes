@@ -2,8 +2,6 @@
 
 A Spring Boot library that enforces `@requiresScopes` directives declared in a GraphQL schema at field-execution time — no per-controller annotations required.
 
-Scope checking is delegated to a configurable list of `ScopeCheckStrategy` beans, making it easy to extend or replace the default behaviour without touching library code.
-
 ## Project Structure
 
 - **`spring-security-graphql-requiresscopes`** — Core library: `ScopeCheckStrategy` interface, built-in strategy implementations, and `RequiresScopesInstrumentation`
@@ -36,72 +34,134 @@ type Query {
 
 The third example above means: _(has PRICING feature AND is ADMIN)_ **OR** _(is SUPERUSER)_.
 
-## How scope checking works
+## Configuration
 
-A field is accessible when at least one registered `ScopeCheckStrategy` returns `true` for every scope in a passing AND-group.
+All configuration lives in `application.yml`. No beans need to be defined in the consuming application.
 
-Three strategies are auto-configured by default:
-
-### Strategy 1 — `SimpleAuthorityMatchStrategy`
-
-Checks whether the scope value exists **as-is** in `authentication.getAuthorities()` (case-insensitive).
-
-```
-scope "feature:PRICING"  →  looks for authority "feature:PRICING"
-```
-
-Useful when the application's `JwtGrantedAuthoritiesConverter` is configured to produce authorities that already include the scope-type prefix.
-
-### Strategy 2 — `RolePrefixAuthorityMatchStrategy`
-
-Strips the `role:` prefix, prepends the Spring Security role prefix (read from `GrantedAuthorityDefaults`, defaults to `ROLE_`), and checks authorities.
-
-```
-scope "role:ADMIN"  →  looks for authority "ROLE_ADMIN"
+```yaml
+spring:
+  security:
+    graphql:
+      requiresscopes:
+        role-authority-prefix: ROLE_   # authority prefix for "role:" scopes (see Strategy 2 below)
+        scope-mappings:
+          feature: FEATURE_            # "feature:PRICING" → checks for authority "FEATURE_PRICING"
+          roles: ROLE_                 # "roles:ADMIN"     → checks for authority "ROLE_ADMIN"
 ```
 
-The role prefix stays in sync with the application's `GrantedAuthorityDefaults` bean automatically.
+The `scope-mappings` key is the scope type name **without** the trailing colon — the library appends it automatically.
 
-### Strategy 3 — `ClaimPrefixMappingStrategy`
+---
 
-Uses a `Map<String, String>` that maps scope-type prefixes to Spring Security authority prefixes. The map is built at startup by inspecting the `JwtAuthenticationConverter` bean (via `JwtGrantedAuthoritiesConverter`) and falls back to `{"feature:" → "FEATURE_", "role:" → "ROLE_"}` when the bean is absent or its settings cannot be read.
+## How it works
+
+### 1. Request arrives — JWT is converted to Spring Security authorities
+
+Before the library does anything, Spring Security's `JwtAuthenticationConverter` (configured by the application) processes the incoming JWT and populates `Authentication.getAuthorities()` with `GrantedAuthority` objects. For example:
 
 ```
-scope "feature:PRICING"  →  strips "feature:"  →  prepends "FEATURE_"  →  looks for "FEATURE_PRICING"
-scope "role:ADMIN"       →  strips "role:"      →  prepends "ROLE_"      →  looks for "ROLE_ADMIN"
+JWT claim  "roles": ["ADMIN", "USER"]         →  authorities: ROLE_ADMIN, ROLE_USER
+JWT claim  "enabledFeatures": ["PRICING"]     →  authorities: FEATURE_PRICING
 ```
+
+The library never reads the JWT token directly — it only inspects the already-populated `Authentication` object.
+
+### 2. GraphQL field is resolved — instrumentation intercepts
+
+`RequiresScopesInstrumentation` wraps every field's `DataFetcher`. Before the actual fetch executes, it checks whether the field definition carries a `@requiresScopes` directive.
+
+- **No directive** → passes through immediately, no check performed.
+- **Directive present** → extracts the `scopes` argument and runs the enforcement logic.
+
+The `scopes` argument is parsed from the GraphQL AST (SDL literal) or from an already-coerced external value — both representations are handled.
+
+### 3. Scope matrix is evaluated — OR of AND-groups
+
+```
+@requiresScopes(scopes: [["feature:PRICING", "role:ADMIN"], ["role:SUPERUSER"]])
+```
+
+```
+outer array  [  group-A,                          group-B        ]  → OR
+                ["feature:PRICING", "role:ADMIN"]  ["role:SUPERUSER"]
+inner array      AND                               AND
+```
+
+The instrumentation iterates the outer array. As soon as one AND-group passes completely, access is granted and the actual `DataFetcher` is called. If no group passes, `AccessDeniedException` is thrown.
+
+### 4. Each scope is checked — strategies are tried in order
+
+For every scope string (e.g. `"feature:PRICING"`), the instrumentation calls `strategies.stream().anyMatch(s -> s.check(authentication, scope))`. A scope passes if **any** strategy returns `true`.
+
+Three strategies are auto-configured:
+
+---
+
+#### Strategy 1 — `SimpleAuthorityMatchStrategy`
+
+Checks whether the scope value appears **verbatim** in `Authentication.getAuthorities()` (case-insensitive).
+
+```
+scope "feature:PRICING"
+  → getAuthorities() contains "feature:PRICING" ?
+```
+
+Useful when `JwtAuthenticationConverter` is configured to produce authorities that already contain the full scope string including the type prefix.
+
+---
+
+#### Strategy 2 — `RolePrefixAuthorityMatchStrategy`
+
+Handles `role:` scopes specifically. Strips the `"role:"` prefix and prepends the configured role authority prefix, then checks authorities.
+
+```
+scope "role:ADMIN"
+  → strip "role:"  →  "ADMIN"
+  → prepend role authority prefix  →  "ROLE_ADMIN"
+  → getAuthorities() contains "ROLE_ADMIN" ?
+```
+
+**Role authority prefix resolution order:**
+
+1. `GrantedAuthorityDefaults` bean — if the application has defined one
+2. `spring.security.graphql.requiresscopes.role-authority-prefix` property — explicit configuration
+3. Default: `ROLE_`
+
+---
+
+#### Strategy 3 — `ClaimPrefixMappingStrategy`
+
+Uses the `requiresscopes.scope-mappings` property map to transform any scope type prefix into its corresponding authority prefix, then checks authorities.
+
+```
+scope "feature:PRICING"
+  → scope-mappings: { "feature:" → "FEATURE_" }
+  → strip "feature:"  →  "PRICING"
+  → prepend "FEATURE_"  →  "FEATURE_PRICING"
+  → getAuthorities() contains "FEATURE_PRICING" ?
+```
+
+Prefix matching iterates the map in declaration order — the first matching entry wins.
+If no entry matches the scope prefix, the strategy returns `false`.
+
+---
+
+### 5. Access decision
+
+| Outcome | Result |
+|---|---|
+| At least one AND-group has all scopes passing | `DataFetcher` executes normally |
+| No AND-group fully passes | `AccessDeniedException("Access denied: insufficient scopes")` |
+
+Spring's exception handling translates `AccessDeniedException` into a GraphQL error response — no extra wiring needed.
+
+---
 
 ## Customisation
 
-### Override the prefix mapping (Strategy 3)
-
-Provide a `ClaimPrefixMappingStrategy` bean with the exact mappings your JWT converter produces:
-
-```java
-@Bean
-public ClaimPrefixMappingStrategy claimPrefixMappingStrategy() {
-    return new ClaimPrefixMappingStrategy(Map.of(
-        "feature:", "FEATURE_",
-        "role:",    "ROLE_",
-        "grp:",     "GROUP_"
-    ));
-}
-```
-
-### Override the role prefix (Strategy 2)
-
-Provide a `GrantedAuthorityDefaults` bean with a custom prefix:
-
-```java
-@Bean
-public GrantedAuthorityDefaults grantedAuthorityDefaults() {
-    return new GrantedAuthorityDefaults("CUSTOM_ROLE_");
-}
-```
-
 ### Add a custom strategy
 
-Implement `ScopeCheckStrategy` and register it as a Spring bean — it is picked up automatically:
+Implement `ScopeCheckStrategy` and register it as a Spring bean — it is picked up automatically alongside the three defaults:
 
 ```java
 @Bean
@@ -110,9 +170,16 @@ public ScopeCheckStrategy myStrategy() {
 }
 ```
 
-### Disable a default strategy
+### Replace a default strategy entirely
 
-Declare a bean of the same type annotated with `@Primary`, or exclude the auto-configuration class and wire everything manually.
+Each default strategy is annotated with `@ConditionalOnMissingBean`, so providing a bean of the same type disables the default:
+
+```java
+@Bean
+public ClaimPrefixMappingStrategy claimPrefixMappingStrategy() {
+    return new ClaimPrefixMappingStrategy(Map.of("grp:", "GROUP_"));
+}
+```
 
 ### Use `RequiresScopesInstrumentation` without the starter
 
