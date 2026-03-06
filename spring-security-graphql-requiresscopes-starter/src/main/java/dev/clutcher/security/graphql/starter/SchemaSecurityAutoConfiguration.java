@@ -8,15 +8,18 @@ import dev.clutcher.security.graphql.strategy.SimpleAuthorityMatchStrategy;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.core.GrantedAuthorityDefaults;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 @AutoConfiguration
+@EnableConfigurationProperties(RequiresScopesProperties.class)
 public class SchemaSecurityAutoConfiguration {
 
     /**
@@ -29,32 +32,47 @@ public class SchemaSecurityAutoConfiguration {
     }
 
     /**
-     * Strategy 2: strips the {@code "role:"} prefix, prepends the Spring Security role prefix
-     * (read from {@link GrantedAuthorityDefaults} if present, otherwise defaults to {@code "ROLE_"}),
-     * and checks authorities.
+     * Strategy 2: strips the {@code "role:"} scope-type prefix, prepends the Spring Security
+     * role prefix read from {@link GrantedAuthorityDefaults} (defaults to {@code "ROLE_"}),
+     * and checks the result against the authentication authorities.
+     *
+     * <p>The authority prefix is kept in sync with the application's
+     * {@link GrantedAuthorityDefaults} bean, so it reflects whatever role prefix the
+     * application has configured in Spring Security.
      */
     @Bean
     @ConditionalOnMissingBean(RolePrefixAuthorityMatchStrategy.class)
     public RolePrefixAuthorityMatchStrategy rolePrefixAuthorityMatchStrategy(
-            Optional<GrantedAuthorityDefaults> grantedAuthorityDefaults) {
+            Optional<GrantedAuthorityDefaults> grantedAuthorityDefaults,
+            RequiresScopesProperties properties) {
         String rolePrefix = grantedAuthorityDefaults
                 .map(GrantedAuthorityDefaults::getRolePrefix)
-                .orElse("ROLE_");
+                .orElseGet(properties::getRoleAuthorityPrefix);
         return new RolePrefixAuthorityMatchStrategy("role:", rolePrefix);
     }
 
     /**
-     * Strategy 3: transforms scopes like {@code "feature:PRICING"} into {@code "FEATURE_PRICING"}
-     * using a configurable scope-prefix → authority-prefix map, then checks authorities.
+     * Strategy 3: builds a scope-prefix → authority-prefix mapping from
+     * {@code requiresscopes.scope-mappings} properties, then transforms scope values
+     * and checks the result against the authentication authorities.
      *
-     * <p>Defaults to {@code {"feature:" → "FEATURE_", "role:" → "ROLE_"}}. Override by
-     * providing a {@code ClaimPrefixMappingStrategy} bean with the mappings that match
-     * how your {@code JwtGrantedAuthoritiesConverter} is configured.
+     * <p>Configure in {@code application.yml} — no beans required:
+     * <pre>{@code
+     * spring:
+     *   security:
+     *     graphql:
+     *       requiresscopes:
+     *         scope-mappings:
+     *           feature: FEATURE_   # "feature:PRICING" → checks authority "FEATURE_PRICING"
+     *           roles: ROLE_        # "roles:ADMIN"    → checks authority "ROLE_ADMIN"
+     * }</pre>
      */
     @Bean
     @ConditionalOnMissingBean(ClaimPrefixMappingStrategy.class)
-    public ClaimPrefixMappingStrategy claimPrefixMappingStrategy() {
-        return new ClaimPrefixMappingStrategy(Map.of("feature:", "FEATURE_", "role:", "ROLE_"));
+    public ClaimPrefixMappingStrategy claimPrefixMappingStrategy(RequiresScopesProperties properties) {
+        Map<String, String> mappings = new LinkedHashMap<>();
+        properties.getScopeMappings().forEach((key, value) -> mappings.put(key + ":", value));
+        return new ClaimPrefixMappingStrategy(mappings);
     }
 
     /**

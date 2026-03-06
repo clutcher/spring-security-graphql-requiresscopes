@@ -6,25 +6,19 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Strategy 3: maps scope-type prefixes to Spring Security authority prefixes using a
- * configurable mapping derived from the application's JWT security configuration
- * (e.g. {@code JwtGrantedAuthoritiesConverter} settings), then checks the transformed
- * value against {@link Authentication#getAuthorities()}.
+ * Strategy 3: maps scope-type prefixes to Spring Security authority prefixes, transforms
+ * the scope value, and checks the result against {@link Authentication#getAuthorities()}
+ * (case-insensitive).
  *
- * <p>The mapping is built at construction time by inspecting relevant Spring Security beans
- * (see {@code SchemaSecurityAutoConfiguration}) so it reflects the actual JWT-to-authority
- * conversion in effect.
+ * <p>The mapping is supplied at construction time and is built from {@link ScopeMapping}
+ * beans registered in the application context — the library itself makes no assumptions
+ * about which claim names or authority prefixes your application uses.
  *
- * <p>Example with mapping {@code {"feature:" → "FEATURE_", "role:" → "ROLE_"}}:
- * <ul>
- *   <li>scope {@code "feature:PRICING"} → strips {@code "feature:"} → prepends {@code "FEATURE_"}
- *       → checks authorities for {@code "FEATURE_PRICING"}</li>
- *   <li>scope {@code "role:ADMIN"} → strips {@code "role:"} → prepends {@code "ROLE_"}
- *       → checks authorities for {@code "ROLE_ADMIN"}</li>
- * </ul>
+ * <p>Example: given mapping {@code {"mytype:" → "MYTYPE_"}}, scope {@code "mytype:FOO"}
+ * → strips {@code "mytype:"} → prepends {@code "MYTYPE_"} → checks for authority
+ * {@code "MYTYPE_FOO"}.
  *
- * <p>Prefix matching is performed in iteration order of the supplied map; the first matching
- * entry wins.
+ * <p>Prefix matching is performed in iteration order; the first matching entry wins.
  */
 public class ClaimPrefixMappingStrategy implements ScopeCheckStrategy {
 
