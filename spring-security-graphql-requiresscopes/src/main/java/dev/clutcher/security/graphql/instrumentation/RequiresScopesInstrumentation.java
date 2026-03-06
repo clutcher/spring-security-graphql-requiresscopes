@@ -11,7 +11,7 @@ import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLAppliedDirectiveArgument;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
 
 import java.util.List;
 
@@ -61,7 +61,8 @@ public class RequiresScopesInstrumentation extends SimplePerformantInstrumentati
         List<List<String>> scopes = extractScopes(directive);
 
         return env -> {
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            SecurityContext securityContext = env.getGraphQlContext().get(SecurityContext.class.getName());
+            Authentication authentication = securityContext != null ? securityContext.getAuthentication() : null;
             enforceScopes(authentication, scopes);
             return dataFetcher.get(env);
         };
