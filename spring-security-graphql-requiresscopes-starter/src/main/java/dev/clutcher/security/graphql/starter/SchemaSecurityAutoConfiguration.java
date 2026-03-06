@@ -11,8 +11,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.config.core.GrantedAuthorityDefaults;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +80,44 @@ public class SchemaSecurityAutoConfiguration {
         Map<String, String> mappings = new LinkedHashMap<>();
         properties.getScopeMappings().forEach((key, value) -> mappings.put(key + ":", value));
         return new ClaimPrefixMappingStrategy(mappings);
+    }
+
+    /**
+     * Configures a {@link JwtAuthenticationConverter} that populates
+     * {@code Authentication.getAuthorities()} from every JWT claim listed in
+     * {@code requiresscopes.scope-mappings}.
+     *
+     * <p>Because {@code scope-mappings} is the single source of truth (map key = JWT claim
+     * name = scope-type prefix, map value = authority prefix), no separate
+     * {@code jwt-claim-mappings} property is needed:
+     * <pre>{@code
+     * scope-mappings:
+     *   roles: ROLE_       # JWT "roles": ["ADMIN"]   → authority "ROLE_ADMIN"
+     *   features: FEATURE_ # JWT "features": ["PRICING"] → authority "FEATURE_PRICING"
+     * }</pre>
+     *
+     * <p>Only registered when no {@link JwtAuthenticationConverter} bean exists yet.
+     * When registered, it replaces Spring Boot's auto-configured converter, so
+     * {@code spring.security.oauth2.resourceserver.jwt.authorities-claim-name} is ignored.
+     */
+    @Bean
+    @ConditionalOnMissingBean(JwtAuthenticationConverter.class)
+    public JwtAuthenticationConverter jwtAuthenticationConverter(RequiresScopesProperties properties) {
+        List<Converter<Jwt, Collection<GrantedAuthority>>> converters = new ArrayList<>();
+        properties.getScopeMappings().forEach((claimName, authorityPrefix) -> {
+            JwtGrantedAuthoritiesConverter converter = new JwtGrantedAuthoritiesConverter();
+            converter.setAuthoritiesClaimName(claimName);
+            converter.setAuthorityPrefix(authorityPrefix);
+            converters.add(converter);
+        });
+
+        JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
+        jwtConverter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            List<GrantedAuthority> authorities = new ArrayList<>();
+            converters.forEach(c -> authorities.addAll(c.convert(jwt)));
+            return authorities;
+        });
+        return jwtConverter;
     }
 
     /**

@@ -13,6 +13,8 @@ dependencies {
     // Needed for @ConditionalOnClass — graphql-java is provided by the consuming application at runtime.
     compileOnly("com.graphql-java:graphql-java:25.0")
 
+    compileOnly("org.springframework.security:spring-security-oauth2-jose")
+
     // Generates spring-configuration-metadata.json for IDE autocomplete of requiresscopes.* properties.
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 }
