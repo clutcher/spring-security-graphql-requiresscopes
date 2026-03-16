@@ -68,11 +68,6 @@ public class RequiresScopesInstrumentation extends SimplePerformantInstrumentati
         };
     }
 
-    /**
-     * Extracts the {@code [[String]]} scopes value from the directive argument.
-     * Handles both SDL literal values (parsed as graphql-java AST nodes) and
-     * already-coerced external values.
-     */
     private List<List<String>> extractScopes(GraphQLAppliedDirective directive) {
         GraphQLAppliedDirectiveArgument arg = directive.getArgument(SCOPES_ARGUMENT);
         var valueState = arg.getArgumentValue();
@@ -100,10 +95,6 @@ public class RequiresScopesInstrumentation extends SimplePerformantInstrumentati
         return List.of();
     }
 
-    /**
-     * Enforces the scope matrix. Outer array = OR, inner array = AND.
-     * Throws {@link AccessDeniedException} if no OR group is fully satisfied.
-     */
     private void enforceScopes(Authentication authentication, List<List<String>> scopes) {
         for (List<String> andGroup : scopes) {
             if (andGroup.stream().allMatch(scope -> checkScope(authentication, scope))) {

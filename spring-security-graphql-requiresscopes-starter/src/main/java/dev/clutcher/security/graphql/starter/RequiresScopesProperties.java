@@ -33,17 +33,8 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "spring.security.graphql.requiresscopes")
 public class RequiresScopesProperties {
 
-    /**
-     * Authority prefix prepended by {@code RolePrefixAuthorityMatchStrategy} when
-     * checking {@code "role:"} scopes. Used as fallback when no
-     * {@code GrantedAuthorityDefaults} bean is present. Defaults to {@code "ROLE_"}.
-     */
     private String roleAuthorityPrefix = "ROLE_";
 
-    /**
-     * Maps JWT claim names / scope-type prefixes to Spring Security authority prefixes.
-     * Iteration order is preserved (declaration order = check order).
-     */
     private Map<String, String> scopeMappings = new LinkedHashMap<>();
 
     public String getRoleAuthorityPrefix() {
