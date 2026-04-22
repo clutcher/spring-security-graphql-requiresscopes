@@ -1,7 +1,8 @@
 package dev.clutcher.security.graphql.instrumentation;
 
-import dev.clutcher.security.graphql.strategy.impl.ClaimPrefixMappingStrategy;
 import dev.clutcher.security.graphql.strategy.ScopeCheckStrategy;
+import dev.clutcher.security.graphql.strategy.impl.ClaimPrefixMappingStrategy;
+import dev.clutcher.security.graphql.strategy.impl.ScopePrefixAuthorityMatchStrategy;
 import dev.clutcher.security.graphql.strategy.impl.SimpleAuthorityMatchStrategy;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
@@ -43,6 +44,7 @@ class RequiresScopesInstrumentationTest {
 
     private final List<ScopeCheckStrategy> strategies = List.of(
             new SimpleAuthorityMatchStrategy(),
+            new ScopePrefixAuthorityMatchStrategy("SCOPE_"),
             new ClaimPrefixMappingStrategy(Map.of("role:", "ROLE_", "feature:", "FEATURE_"))
     );
 
@@ -215,6 +217,24 @@ class RequiresScopesInstrumentationTest {
         // Then
         assertTrue(result.getErrors().isEmpty());
         assertEquals("protected-value", dataField(result, "protectedField"));
+    }
+
+    @Test
+    void shouldGrantAccessForApolloStyleSchemaWithDefaultSpringSecurity() {
+        // Given
+        GraphQL graphQL = buildGraphQlFromSdl("""
+                type Query {
+                  dashboard: String @requiresScopes(scopes: [["admin"]])
+                }
+                """, Map.of("dashboard", env -> "dashboard-value"));
+        Authentication authenticated = authWith("SCOPE_admin");
+
+        // When
+        ExecutionResult result = execute(graphQL, "{ dashboard }", authenticated);
+
+        // Then
+        assertTrue(result.getErrors().isEmpty());
+        assertEquals("dashboard-value", dataField(result, "dashboard"));
     }
 
     private Authentication authWith(String... authorities) {
