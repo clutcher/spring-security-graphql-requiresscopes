@@ -6,21 +6,6 @@ import org.springframework.security.core.Authentication;
 
 import java.util.Map;
 
-/**
- * Strategy 3: maps scope-type prefixes to Spring Security authority prefixes, transforms
- * the scope value, and checks the result against {@link Authentication#getAuthorities()}
- * (case-insensitive).
- *
- * <p>The mapping is supplied at construction time and built from the
- * {@code spring.security.graphql.requiresscopes.scope-mappings} property — the library
- * itself makes no assumptions about which claim names or authority prefixes your application uses.
- *
- * <p>Example: given mapping {@code {"mytype:" → "MYTYPE_"}}, scope {@code "mytype:FOO"}
- * → strips {@code "mytype:"} → prepends {@code "MYTYPE_"} → checks for authority
- * {@code "MYTYPE_FOO"}.
- *
- * <p>Prefix matching is performed in iteration order; the first matching entry wins.
- */
 public class ClaimPrefixMappingStrategy implements ScopeCheckStrategy {
 
     private final Map<String, String> prefixMappings;

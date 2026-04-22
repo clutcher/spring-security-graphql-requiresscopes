@@ -17,22 +17,9 @@ import org.springframework.security.core.context.SecurityContext;
 import java.util.List;
 
 /**
- * Enforces {@code @requiresScopes} directives declared in the GraphQL schema at field-execution
- * time — no per-controller annotations required.
- *
- * <p>For each field fetch, the instrumentation checks whether the resolved field carries a
- * {@code @requiresScopes} applied directive. If it does, the scope values are evaluated
- * against the current {@link Authentication} using a list of {@link ScopeCheckStrategy}
- * instances. A scope passes if <em>any</em> strategy returns {@code true} for it.
- *
- * <p>The {@code scopes} argument follows Apollo Federation semantics:
- * <ul>
- *   <li>Outer array = OR — at least one inner group must pass.</li>
- *   <li>Inner array = AND — every scope in a group must be satisfied.</li>
- * </ul>
- *
- * Example: {@code @requiresScopes(scopes: [["feature:X", "role:Y"]])} requires the user to
- * have <em>both</em> feature X <em>and</em> role Y.
+ * Enforces {@code @requiresScopes} directives at field-execution time using OR-of-AND
+ * scope evaluation. {@link Authentication} is read from the GraphQL context under key
+ * {@code SecurityContext.class.getName()}.
  */
 public class RequiresScopesInstrumentation extends SimplePerformantInstrumentation {
 

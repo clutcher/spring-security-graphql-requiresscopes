@@ -16,19 +16,21 @@ A Spring Boot library that enforces `@requiresScopes` directives declared in a G
     - [Built-in Strategies](#built-in-strategies)
 5. [Customisation](#customisation)
 6. [Implementation Details](#implementation-details)
+7. [Specification References](#specification-references)
 
 ---
 
 ## Overview
 
-By default, securing individual GraphQL fields in Spring Boot requires either custom `DataFetcher` logic or manual checks scattered across resolvers. There is no built-in mechanism to enforce access control rules declared directly in the GraphQL schema.
+This library adds support for the `@requiresScopes` GraphQL directive — defined by [Apollo Federation](https://www.apollographql.com/docs/graphos/reference/federation/directives) and used by Apollo Router and Hive Gateway — to Spring GraphQL applications. The directive semantics (OR-of-AND scope matrix, case-sensitive comparison) are preserved; scopes are resolved against Spring Security's `Authentication.getAuthorities()` rather than an OAuth2 `scope` claim.
 
-**Spring Security GraphQL RequiresScopes** addresses this by hooking into graphql-java's instrumentation pipeline. When a field carries an `@requiresScopes` directive, the library intercepts the fetch and checks the current user's Spring Security authorities — before any resolver code runs.
+Without this library, securing individual GraphQL fields in Spring Boot requires custom `DataFetcher` logic or manual checks scattered across resolvers. There is no built-in mechanism to enforce access control rules declared directly in the GraphQL schema.
 
 ### Key Features
 
-- Schema-driven access control via the `@requiresScopes` GraphQL directive
+- Schema-driven access control via the Federation `@requiresScopes` directive
 - OR-of-AND scope evaluation semantics (Apollo Federation compatible)
+- Strict case-sensitive scope/authority matching — aligned with RFC 6749, Apollo Router, and Spring Security
 - Two built-in scope check strategies covering common authority conventions
 - Extensible `ScopeCheckStrategy` SPI for custom authority matching logic
 - Spring Boot auto-configuration with sensible defaults
@@ -83,6 +85,8 @@ type Query {
 }
 ```
 
+> **⚠️ Case sensitivity.** Scope values must case-match the authorities produced by your `JwtGrantedAuthoritiesConverter`. With Spring Security's canonical uppercase prefixes (e.g. `ROLE_ADMIN`, `FEATURE_PRICING`), write scopes in matching case: `"role:ADMIN"`, **not** `"role:admin"`. This mirrors Apollo Router's own behaviour and RFC 6749 §3.3 (OAuth 2.0 scopes are defined as case-sensitive strings).
+
 #### Configuration
 
 All configuration lives under `spring.security.graphql.requiresscopes` in `application.yml`. No beans need to be defined in the consuming application.
@@ -97,6 +101,15 @@ spring:
 ```
 
 The `scope-mappings` key is the scope type name **without** the trailing colon — the library appends it automatically.
+
+The same map drives the auto-configured `JwtAuthenticationConverter`, so JWT claims flow through to authorities like this:
+
+```
+JWT claim  "roles": ["ADMIN", "USER"]       →  authorities: ROLE_ADMIN, ROLE_USER
+JWT claim  "features": ["PRICING"]          →  authorities: FEATURE_PRICING
+```
+
+Schema-level `@requiresScopes(scopes: [["role:ADMIN"]])` then matches against `ROLE_ADMIN` in the authorities.
 
 A `"role:"` entry is **auto-registered** by the starter using the prefix from Spring Security's `GrantedAuthorityDefaults` bean (or the default `"ROLE_"` if none is declared). To customise the role prefix, declare a `GrantedAuthorityDefaults` bean:
 
@@ -147,7 +160,7 @@ Two strategies are auto-configured:
 
 #### Strategy 1 — `SimpleAuthorityMatchStrategy`
 
-Checks whether the scope value appears **verbatim** in `Authentication.getAuthorities()`:
+Checks whether the scope value appears **verbatim** in `Authentication.getAuthorities()`. Comparison is a case-sensitive `String.equals` — the same rule used by Spring Security's `AuthoritiesAuthorizationManager` and by Apollo Router's reference implementation of `@requiresScopes`, and consistent with RFC 6749 §3.3 which defines OAuth 2.0 scopes as case-sensitive strings.
 
 ```
 scope "feature:PRICING"
@@ -220,8 +233,9 @@ public RequiresScopesInstrumentation requiresScopesInstrumentation(List<ScopeChe
 
 - **`RequiresScopesInstrumentation`** — Extends `SimplePerformantInstrumentation`. Wraps every field's `DataFetcher` via `instrumentDataFetcher`. Fields without `@requiresScopes` are returned unchanged (zero overhead). The `scopes` argument is extracted once outside the returned lambda, so the AST walk happens per-field-definition, not per-fetch.
 - **`ScopeCheckStrategy`** — SPI interface: `check(Authentication, String) -> boolean`. Strategies are tried in the order Spring injects them and short-circuit on first `true`.
-- **`SimpleAuthorityMatchStrategy`** — Verbatim authority match.
-- **`ClaimPrefixMappingStrategy`** — Map-driven prefix transformation built from the auto-registered `"role:"` entry plus the `scope-mappings` property.
+- **`SimpleAuthorityMatchStrategy`** — Delegates to `AuthorityMatcher`: passes if any authority equals the scope value verbatim (case-sensitive).
+- **`ClaimPrefixMappingStrategy`** — Map-driven prefix transformation built from the auto-registered `"role:"` entry plus the `scope-mappings` property. Delegates final authority comparison to `AuthorityMatcher`.
+- **`AuthorityMatcher`** — Shared utility in `dev.clutcher.security.graphql.utils`. Centralises the authority-comparison rule: strict case-sensitive `String.equals`. A policy change is applied here once. Aligned with RFC 6749 §3.3 (OAuth 2.0 scopes are case-sensitive), Apollo Router's `@requiresScopes` implementation, and Spring Security's `AuthoritiesAuthorizationManager`.
 
 ### spring-security-graphql-requiresscopes-starter
 
@@ -230,3 +244,12 @@ public RequiresScopesInstrumentation requiresScopesInstrumentation(List<ScopeChe
 1. **`SimpleAuthorityMatchStrategy`** — Exact authority match, no configuration required.
 2. **`ClaimPrefixMappingStrategy`** — Built from a combined `LinkedHashMap` containing the auto-registered `"role:"` entry (prefix resolved from the `GrantedAuthorityDefaults` bean, or Spring Security's default `"ROLE_"` if none is declared) followed by every `scope-mappings` entry. A user-supplied `role:` entry in `scope-mappings` overrides the auto-registered one. The `scope-mappings` portion also drives the auto-configured `JwtAuthenticationConverter`.
 3. **`JwtAuthenticationConverter`** — One `JwtGrantedAuthoritiesConverter` per `scope-mappings` entry, using the map key as the JWT claim name and the map value as the authority prefix. Only registered when no `JwtAuthenticationConverter` bean is present.
+
+---
+
+## Specification References
+
+- [Apollo Federation `@requiresScopes` directive](https://www.apollographql.com/docs/graphos/reference/federation/directives) — the directive's canonical definition.
+- [Apollo Router authorization](https://www.apollographql.com/docs/graphos/routing/security/authorization) — reference implementation whose scope-matching semantics this library mirrors.
+- [RFC 6749 §3.3](https://datatracker.ietf.org/doc/html/rfc6749#section-3.3) — OAuth 2.0 access token scope format; defines scopes as case-sensitive strings.
+- [Spring Security `GrantedAuthority`](https://docs.spring.io/spring-security/reference/servlet/authorization/architecture.html) — the authority model this library binds the directive to.

@@ -30,19 +30,7 @@ class SimpleAuthorityMatchStrategyTest {
     }
 
     @Test
-    void shouldReturnTrueWhenScopeInputIsLowercaseAndAuthorityIsUppercase() {
-        // Given
-        Authentication auth = authWith("FEATURE:PRICING");
-
-        // When
-        boolean allowed = strategy.check(auth, "feature:pricing");
-
-        // Then
-        assertTrue(allowed);
-    }
-
-    @Test
-    void shouldReturnFalseWhenAuthorityIsLowercaseAndScopeIsUppercase() {
+    void shouldReturnFalseWhenScopeCaseDiffersFromAuthority() {
         // Given
         Authentication auth = authWith("feature:pricing");
 

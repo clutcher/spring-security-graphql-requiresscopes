@@ -46,19 +46,7 @@ class ClaimPrefixMappingStrategyTest {
     }
 
     @Test
-    void shouldReturnTrueWhenScopeValueIsLowercaseAndAuthorityIsUppercase() {
-        // Given
-        Authentication auth = authWith("FEATURE_PRICING");
-
-        // When
-        boolean allowed = strategy.check(auth, "feature:pricing");
-
-        // Then
-        assertTrue(allowed);
-    }
-
-    @Test
-    void shouldReturnFalseWhenAuthorityIsLowercaseAndScopeValueIsUppercase() {
+    void shouldReturnFalseWhenTransformedAuthorityCaseDiffers() {
         // Given
         Authentication auth = authWith("feature_pricing");
 
