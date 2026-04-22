@@ -1,5 +1,4 @@
 import org.jreleaser.gradle.plugin.JReleaserExtension
-import org.jreleaser.model.Http
 
 plugins {
     id("java")
@@ -7,13 +6,13 @@ plugins {
 
     id("maven-publish")
     id("signing")
-    id("org.jreleaser") version "1.19.0"
+    id("org.jreleaser") version "1.23.0"
 }
 
 extra["springBootVersion"] = "4.0.2"
 
 allprojects {
-    group = "dev.clutcher.security"
+    group = "dev.clutcher.spring-security"
     version = "1.0.0"
 }
 
@@ -116,7 +115,8 @@ fun Project.configureJReleaser() {
         release {
             github {
                 repoOwner = "clutcher"
-                token = System.getenv("GITHUB_TOKEN")
+                username = "clutcher"
+                token = System.getenv("JRELEASER_GITHUB_TOKEN")
 
                 changelog {
                     formatted.set(org.jreleaser.model.Active.ALWAYS)
@@ -133,11 +133,6 @@ fun Project.configureJReleaser() {
                         sign.set(false)
 
                         url.set("https://central.sonatype.com/api/v1/publisher")
-                        authorization.set(Http.Authorization.BEARER)
-
-                        username.set(System.getenv("MAVENCENTRAL_USERNAME"))
-                        password.set(System.getenv("MAVENCENTRAL_PASSWORD"))
-
                         stagingRepository("build/staging-deploy")
                     }
                 }
