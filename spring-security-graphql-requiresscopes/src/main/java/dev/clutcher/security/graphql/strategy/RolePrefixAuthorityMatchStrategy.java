@@ -2,8 +2,6 @@ package dev.clutcher.security.graphql.strategy;
 
 import org.springframework.security.core.Authentication;
 
-import java.util.Objects;
-
 /**
  * Strategy 2: strips a scope-type prefix (e.g. {@code "role:"}) prepends the configured
  * authority prefix (e.g. {@code "ROLE_"}), and checks the result against
@@ -35,10 +33,10 @@ public class RolePrefixAuthorityMatchStrategy implements ScopeCheckStrategy {
 
     @Override
     public boolean check(Authentication authentication, String scope) {
-        if (authentication == null || !scope.startsWith(scopePrefix)) return false;
-        String value = scope.substring(scopePrefix.length());
-        String authority = authorityPrefix + value;
-        return authentication.getAuthorities().stream()
-                .anyMatch(a -> Objects.requireNonNull(a.getAuthority()).equalsIgnoreCase(authority));
+        if (!scope.startsWith(scopePrefix)) {
+            return false;
+        }
+        String authority = authorityPrefix + scope.substring(scopePrefix.length());
+        return AuthorityMatcher.hasAuthority(authentication, authority);
     }
 }

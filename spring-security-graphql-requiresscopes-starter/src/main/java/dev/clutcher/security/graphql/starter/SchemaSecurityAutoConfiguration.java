@@ -57,6 +57,16 @@ public class SchemaSecurityAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(JwtAuthenticationConverter.class)
     public JwtAuthenticationConverter jwtAuthenticationConverter(RequiresScopesProperties properties) {
+        List<Converter<Jwt, Collection<GrantedAuthority>>> perClaimConverters = buildAuthoritiesConverters(properties);
+        Converter<Jwt, Collection<GrantedAuthority>> aggregatedConverter = composeAuthoritiesConverters(perClaimConverters);
+
+        JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
+        jwtConverter.setJwtGrantedAuthoritiesConverter(aggregatedConverter);
+        return jwtConverter;
+    }
+
+    private static List<Converter<Jwt, Collection<GrantedAuthority>>> buildAuthoritiesConverters(
+            RequiresScopesProperties properties) {
         List<Converter<Jwt, Collection<GrantedAuthority>>> converters = new ArrayList<>();
         properties.getScopeMappings().forEach((claimName, authorityPrefix) -> {
             JwtGrantedAuthoritiesConverter converter = new JwtGrantedAuthoritiesConverter();
@@ -64,14 +74,16 @@ public class SchemaSecurityAutoConfiguration {
             converter.setAuthorityPrefix(authorityPrefix);
             converters.add(converter);
         });
+        return converters;
+    }
 
-        JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
-        jwtConverter.setJwtGrantedAuthoritiesConverter(jwt -> {
+    private static Converter<Jwt, Collection<GrantedAuthority>> composeAuthoritiesConverters(
+            List<Converter<Jwt, Collection<GrantedAuthority>>> converters) {
+        return jwt -> {
             List<GrantedAuthority> authorities = new ArrayList<>();
-            converters.forEach(c -> authorities.addAll(c.convert(jwt)));
+            converters.forEach(converter -> authorities.addAll(converter.convert(jwt)));
             return authorities;
-        });
-        return jwtConverter;
+        };
     }
 
     @Configuration(proxyBeanMethods = false)

@@ -7,6 +7,7 @@ import graphql.execution.instrumentation.SimplePerformantInstrumentation;
 import graphql.language.ArrayValue;
 import graphql.language.StringValue;
 import graphql.schema.DataFetcher;
+import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLAppliedDirectiveArgument;
 import org.springframework.security.access.AccessDeniedException;
@@ -60,39 +61,59 @@ public class RequiresScopesInstrumentation extends SimplePerformantInstrumentati
 
         List<List<String>> scopes = extractScopes(directive);
 
-        return env -> {
-            SecurityContext securityContext = env.getGraphQlContext().get(SecurityContext.class.getName());
-            Authentication authentication = securityContext != null ? securityContext.getAuthentication() : null;
+        return environment -> {
+            Authentication authentication = resolveAuthentication(environment);
             enforceScopes(authentication, scopes);
-            return dataFetcher.get(env);
+            return dataFetcher.get(environment);
         };
     }
 
+    private Authentication resolveAuthentication(DataFetchingEnvironment environment) {
+        SecurityContext securityContext = environment.getGraphQlContext().get(SecurityContext.class.getName());
+        return securityContext != null ? securityContext.getAuthentication() : null;
+    }
+
     private List<List<String>> extractScopes(GraphQLAppliedDirective directive) {
-        GraphQLAppliedDirectiveArgument arg = directive.getArgument(SCOPES_ARGUMENT);
-        var valueState = arg.getArgumentValue();
+        GraphQLAppliedDirectiveArgument argument = directive.getArgument(SCOPES_ARGUMENT);
+        var valueState = argument.getArgumentValue();
 
-        if (valueState.isLiteral() && valueState.getValue() instanceof ArrayValue outerArray) {
-            return outerArray.getValues().stream()
-                    .filter(ArrayValue.class::isInstance)
-                    .map(inner -> ((ArrayValue) inner).getValues().stream()
-                            .filter(StringValue.class::isInstance)
-                            .map(sv -> ((StringValue) sv).getValue())
-                            .toList())
-                    .toList();
+        if (valueState.isLiteral() && valueState.getValue() instanceof ArrayValue outer) {
+            return readLiteralGroups(outer);
         }
-
         if (valueState.isExternal() && valueState.getValue() instanceof List<?> outer) {
-            return outer.stream()
-                    .filter(List.class::isInstance)
-                    .map(inner -> ((List<?>) inner).stream()
-                            .filter(String.class::isInstance)
-                            .map(String.class::cast)
-                            .toList())
-                    .toList();
+            return readExternalGroups(outer);
         }
-
         return List.of();
+    }
+
+    private List<List<String>> readLiteralGroups(ArrayValue outer) {
+        return outer.getValues().stream()
+                .filter(ArrayValue.class::isInstance)
+                .map(ArrayValue.class::cast)
+                .map(this::readLiteralGroup)
+                .toList();
+    }
+
+    private List<String> readLiteralGroup(ArrayValue group) {
+        return group.getValues().stream()
+                .filter(StringValue.class::isInstance)
+                .map(value -> ((StringValue) value).getValue())
+                .toList();
+    }
+
+    private List<List<String>> readExternalGroups(List<?> outer) {
+        return outer.stream()
+                .filter(List.class::isInstance)
+                .map(List.class::cast)
+                .map(this::readExternalGroup)
+                .toList();
+    }
+
+    private List<String> readExternalGroup(List<?> group) {
+        return group.stream()
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .toList();
     }
 
     private void enforceScopes(Authentication authentication, List<List<String>> scopes) {
@@ -105,6 +126,6 @@ public class RequiresScopesInstrumentation extends SimplePerformantInstrumentati
     }
 
     private boolean checkScope(Authentication authentication, String scope) {
-        return strategies.stream().anyMatch(s -> s.check(authentication, scope));
+        return strategies.stream().anyMatch(strategy -> strategy.check(authentication, scope));
     }
 }

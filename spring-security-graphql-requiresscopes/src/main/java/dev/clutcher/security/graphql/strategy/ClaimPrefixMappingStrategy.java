@@ -3,7 +3,6 @@ package dev.clutcher.security.graphql.strategy;
 import org.springframework.security.core.Authentication;
 
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * Strategy 3: maps scope-type prefixes to Spring Security authority prefixes, transforms
@@ -30,13 +29,10 @@ public class ClaimPrefixMappingStrategy implements ScopeCheckStrategy {
 
     @Override
     public boolean check(Authentication authentication, String scope) {
-        if (authentication == null) return false;
         for (Map.Entry<String, String> entry : prefixMappings.entrySet()) {
             if (scope.startsWith(entry.getKey())) {
-                String value = scope.substring(entry.getKey().length());
-                String authority = entry.getValue() + value;
-                return authentication.getAuthorities().stream()
-                        .anyMatch(a -> Objects.requireNonNull(a.getAuthority()).equalsIgnoreCase(authority));
+                String authority = entry.getValue() + scope.substring(entry.getKey().length());
+                return AuthorityMatcher.hasAuthority(authentication, authority);
             }
         }
         return false;

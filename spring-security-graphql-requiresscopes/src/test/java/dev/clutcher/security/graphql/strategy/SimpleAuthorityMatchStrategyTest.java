@@ -3,7 +3,6 @@ package dev.clutcher.security.graphql.strategy;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.List;
 
@@ -20,41 +19,85 @@ class SimpleAuthorityMatchStrategyTest {
 
     @Test
     void shouldReturnTrueWhenScopeMatchesAuthorityExactly() {
+        // Given
         Authentication auth = authWith("feature:PRICING");
 
-        assertTrue(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertTrue(allowed);
     }
 
     @Test
-    void shouldReturnTrueForCaseInsensitiveMatch() {
+    void shouldReturnTrueWhenScopeInputIsLowercaseAndAuthorityIsUppercase() {
+        // Given
+        Authentication auth = authWith("FEATURE:PRICING");
+
+        // When
+        boolean allowed = strategy.check(auth, "feature:pricing");
+
+        // Then
+        assertTrue(allowed);
+    }
+
+    @Test
+    void shouldReturnFalseWhenAuthorityIsLowercaseAndScopeIsUppercase() {
+        // Given
         Authentication auth = authWith("feature:pricing");
 
-        assertTrue(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseWhenScopeNotInAuthorities() {
+        // Given
         Authentication auth = authWith("feature:CART");
 
-        assertFalse(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseWhenAuthoritiesAreEmpty() {
+        // Given
         Authentication auth = new TestingAuthenticationToken("user", null, List.of());
 
-        assertFalse(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseForNullAuthentication() {
-        assertFalse(strategy.check(null, "feature:PRICING"));
+        // Given
+        Authentication auth = null;
+
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnTrueWhenOneOfMultipleAuthoritiesMatches() {
+        // Given
         Authentication auth = authWith("feature:CART", "feature:PRICING", "role:ADMIN");
 
-        assertTrue(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertTrue(allowed);
     }
 }

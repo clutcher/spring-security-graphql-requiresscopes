@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RolePrefixAuthorityMatchStrategyTest {
 
-    private final RolePrefixAuthorityMatchStrategy strategy = new RolePrefixAuthorityMatchStrategy();
+    private final RolePrefixAuthorityMatchStrategy strategy = new RolePrefixAuthorityMatchStrategy("role:", "ROLE_");
 
     private Authentication authWith(String... authorities) {
         return new TestingAuthenticationToken("user", null, authorities);
@@ -19,59 +19,113 @@ class RolePrefixAuthorityMatchStrategyTest {
 
     @Test
     void shouldReturnTrueWhenRoleAuthorityExists() {
+        // Given
         Authentication auth = authWith("ROLE_ADMIN");
 
-        assertTrue(strategy.check(auth, "role:ADMIN"));
+        // When
+        boolean allowed = strategy.check(auth, "role:ADMIN");
+
+        // Then
+        assertTrue(allowed);
     }
 
     @Test
-    void shouldReturnTrueForCaseInsensitiveMatch() {
+    void shouldReturnTrueWhenScopeValueIsLowercaseAndAuthorityIsUppercase() {
+        // Given
+        Authentication auth = authWith("ROLE_ADMIN");
+
+        // When
+        boolean allowed = strategy.check(auth, "role:admin");
+
+        // Then
+        assertTrue(allowed);
+    }
+
+    @Test
+    void shouldReturnFalseWhenAuthorityIsLowercaseAndScopeValueIsUppercase() {
+        // Given
         Authentication auth = authWith("role_admin");
 
-        assertTrue(strategy.check(auth, "role:ADMIN"));
+        // When
+        boolean allowed = strategy.check(auth, "role:ADMIN");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseWhenRoleAuthorityIsMissing() {
+        // Given
         Authentication auth = authWith("ROLE_USER");
 
-        assertFalse(strategy.check(auth, "role:ADMIN"));
+        // When
+        boolean allowed = strategy.check(auth, "role:ADMIN");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseWhenAuthoritiesAreEmpty() {
+        // Given
         Authentication auth = new TestingAuthenticationToken("user", null, List.of());
 
-        assertFalse(strategy.check(auth, "role:ADMIN"));
+        // When
+        boolean allowed = strategy.check(auth, "role:ADMIN");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseForNullAuthentication() {
-        assertFalse(strategy.check(null, "role:ADMIN"));
+        // Given
+        Authentication auth = null;
+
+        // When
+        boolean allowed = strategy.check(auth, "role:ADMIN");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseWhenScopeDoesNotStartWithRolePrefix() {
+        // Given
         Authentication auth = authWith("ROLE_ADMIN", "FEATURE_PRICING");
 
-        assertFalse(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldSupportCustomScopeAndAuthorityPrefixes() {
+        // Given
         RolePrefixAuthorityMatchStrategy custom =
                 new RolePrefixAuthorityMatchStrategy("grp:", "GROUP_");
         Authentication auth = authWith("GROUP_EDITORS");
 
-        assertTrue(custom.check(auth, "grp:EDITORS"));
+        // When
+        boolean allowed = custom.check(auth, "grp:EDITORS");
+
+        // Then
+        assertTrue(allowed);
     }
 
     @Test
     void shouldUseConfiguredRolePrefixFromGrantedAuthorityDefaults() {
+        // Given
         RolePrefixAuthorityMatchStrategy custom =
                 new RolePrefixAuthorityMatchStrategy("role:", "CUSTOM_ROLE_");
         Authentication auth = authWith("CUSTOM_ROLE_ADMIN");
 
-        assertTrue(custom.check(auth, "role:ADMIN"));
+        // When
+        boolean allowed = custom.check(auth, "role:ADMIN");
+
+        // Then
+        assertTrue(allowed);
     }
 }

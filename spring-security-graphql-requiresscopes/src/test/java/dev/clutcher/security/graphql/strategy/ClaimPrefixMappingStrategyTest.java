@@ -23,73 +23,128 @@ class ClaimPrefixMappingStrategyTest {
 
     @Test
     void shouldTransformFeatureScopeToAuthorityAndMatch() {
+        // Given
         Authentication auth = authWith("FEATURE_PRICING");
 
-        assertTrue(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertTrue(allowed);
     }
 
     @Test
     void shouldTransformRoleScopeToAuthorityAndMatch() {
+        // Given
         Authentication auth = authWith("ROLE_ADMIN");
 
-        assertTrue(strategy.check(auth, "role:ADMIN"));
+        // When
+        boolean allowed = strategy.check(auth, "role:ADMIN");
+
+        // Then
+        assertTrue(allowed);
     }
 
     @Test
-    void shouldReturnTrueForCaseInsensitiveMatch() {
+    void shouldReturnTrueWhenScopeValueIsLowercaseAndAuthorityIsUppercase() {
+        // Given
+        Authentication auth = authWith("FEATURE_PRICING");
+
+        // When
+        boolean allowed = strategy.check(auth, "feature:pricing");
+
+        // Then
+        assertTrue(allowed);
+    }
+
+    @Test
+    void shouldReturnFalseWhenAuthorityIsLowercaseAndScopeValueIsUppercase() {
+        // Given
         Authentication auth = authWith("feature_pricing");
 
-        assertTrue(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseWhenTransformedAuthorityIsMissing() {
+        // Given
         Authentication auth = authWith("FEATURE_CART");
 
-        assertFalse(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseWhenNoMappingMatchesScopePrefix() {
+        // Given
         Authentication auth = authWith("SOMETHING_PRICING");
 
-        assertFalse(strategy.check(auth, "unknown:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "unknown:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseWhenAuthoritiesAreEmpty() {
+        // Given
         Authentication auth = new TestingAuthenticationToken("user", null, List.of());
 
-        assertFalse(strategy.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldReturnFalseForNullAuthentication() {
-        assertFalse(strategy.check(null, "feature:PRICING"));
+        // Given
+        Authentication auth = null;
+
+        // When
+        boolean allowed = strategy.check(auth, "feature:PRICING");
+
+        // Then
+        assertFalse(allowed);
     }
 
     @Test
     void shouldRespectInsertionOrderForPrefixMatching() {
-        // "feature:" is checked before "feat:" — insertion order matters
+        // Given
         Map<String, String> orderedMappings = new LinkedHashMap<>();
         orderedMappings.put("feature:", "FEATURE_");
         orderedMappings.put("feat:", "FEAT_");
         ClaimPrefixMappingStrategy ordered = new ClaimPrefixMappingStrategy(orderedMappings);
-
         Authentication auth = authWith("FEATURE_PRICING");
 
-        assertTrue(ordered.check(auth, "feature:PRICING"));
+        // When
+        boolean allowed = ordered.check(auth, "feature:PRICING");
+
+        // Then
+        assertTrue(allowed);
     }
 
     @Test
     void shouldSupportCustomMappingsFromJwtConverterConfiguration() {
-        // Simulates a mapping detected from JwtGrantedAuthoritiesConverter:
-        // claim "roles" with prefix "ROLE_"
+        // Given
         ClaimPrefixMappingStrategy custom = new ClaimPrefixMappingStrategy(
                 Map.of("roles:", "ROLE_")
         );
         Authentication auth = authWith("ROLE_EDITOR");
 
-        assertTrue(custom.check(auth, "roles:EDITOR"));
+        // When
+        boolean allowed = custom.check(auth, "roles:EDITOR");
+
+        // Then
+        assertTrue(allowed);
     }
 }
