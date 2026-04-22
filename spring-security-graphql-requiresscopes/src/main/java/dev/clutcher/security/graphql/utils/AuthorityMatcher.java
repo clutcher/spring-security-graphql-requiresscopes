@@ -1,16 +1,14 @@
-package dev.clutcher.security.graphql.strategy;
+package dev.clutcher.security.graphql.utils;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 
-import java.util.Objects;
-
-final class AuthorityMatcher {
+public class AuthorityMatcher {
 
     private AuthorityMatcher() {
     }
 
-    static boolean   hasAuthority(Authentication authentication, String authorityValue) {
+    public static boolean   hasAuthority(Authentication authentication, String authorityValue) {
         if (authentication == null) {
             return false;
         }

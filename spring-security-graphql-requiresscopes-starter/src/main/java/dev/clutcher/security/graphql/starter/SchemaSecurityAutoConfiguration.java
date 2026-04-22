@@ -1,9 +1,9 @@
 package dev.clutcher.security.graphql.starter;
 
 import dev.clutcher.security.graphql.instrumentation.RequiresScopesInstrumentation;
-import dev.clutcher.security.graphql.strategy.ClaimPrefixMappingStrategy;
+import dev.clutcher.security.graphql.strategy.impl.ClaimPrefixMappingStrategy;
 import dev.clutcher.security.graphql.strategy.ScopeCheckStrategy;
-import dev.clutcher.security.graphql.strategy.SimpleAuthorityMatchStrategy;
+import dev.clutcher.security.graphql.strategy.impl.SimpleAuthorityMatchStrategy;
 import org.jspecify.annotations.NonNull;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;

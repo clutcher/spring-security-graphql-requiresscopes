@@ -1,8 +1,8 @@
 package dev.clutcher.security.graphql.instrumentation;
 
-import dev.clutcher.security.graphql.strategy.ClaimPrefixMappingStrategy;
+import dev.clutcher.security.graphql.strategy.impl.ClaimPrefixMappingStrategy;
 import dev.clutcher.security.graphql.strategy.ScopeCheckStrategy;
-import dev.clutcher.security.graphql.strategy.SimpleAuthorityMatchStrategy;
+import dev.clutcher.security.graphql.strategy.impl.SimpleAuthorityMatchStrategy;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;

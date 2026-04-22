@@ -1,4 +1,4 @@
-package dev.clutcher.security.graphql.strategy;
+package dev.clutcher.security.graphql.strategy.impl;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.TestingAuthenticationToken;

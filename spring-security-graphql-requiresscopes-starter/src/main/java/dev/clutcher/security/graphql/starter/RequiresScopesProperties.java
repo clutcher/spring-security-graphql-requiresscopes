@@ -1,5 +1,6 @@
 package dev.clutcher.security.graphql.starter;
 
+import dev.clutcher.security.graphql.strategy.impl.ClaimPrefixMappingStrategy;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.LinkedHashMap;
@@ -25,7 +26,7 @@ import java.util.Map;
  * <ul>
  *   <li>a {@link org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter}
  *       that populates {@code Authentication.getAuthorities()} from each listed JWT claim, and
- *   <li>a {@link dev.clutcher.security.graphql.strategy.ClaimPrefixMappingStrategy} that checks
+ *   <li>a {@link ClaimPrefixMappingStrategy} that checks
  *       those authorities when a {@code @requiresScopes} directive is evaluated.
  * </ul>
  *
