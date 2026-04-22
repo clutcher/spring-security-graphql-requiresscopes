@@ -18,7 +18,6 @@ import java.util.Map;
  *     graphql:
  *       requiresscopes:
  *         scope-mappings:
- *           roles: ROLE_       # JWT claim "roles"    + scope "roles:ADMIN"    → authority "ROLE_ADMIN"
  *           features: FEATURE_ # JWT claim "features" + scope "features:PRICING" → authority "FEATURE_PRICING"
  * }</pre>
  *
@@ -29,21 +28,16 @@ import java.util.Map;
  *   <li>a {@link dev.clutcher.security.graphql.strategy.ClaimPrefixMappingStrategy} that checks
  *       those authorities when a {@code @requiresScopes} directive is evaluated.
  * </ul>
+ *
+ * <p>A {@code "role:"} entry is auto-registered by the starter using the prefix from
+ * {@link org.springframework.security.config.core.GrantedAuthorityDefaults} (if a bean is present)
+ * or Spring Security's default {@code "ROLE_"}. To customise the role prefix, declare a
+ * {@code GrantedAuthorityDefaults} bean in your application.
  */
 @ConfigurationProperties(prefix = "spring.security.graphql.requiresscopes")
 public class RequiresScopesProperties {
 
-    private String roleAuthorityPrefix = "ROLE_";
-
     private Map<String, String> scopeMappings = new LinkedHashMap<>();
-
-    public String getRoleAuthorityPrefix() {
-        return roleAuthorityPrefix;
-    }
-
-    public void setRoleAuthorityPrefix(String roleAuthorityPrefix) {
-        this.roleAuthorityPrefix = roleAuthorityPrefix;
-    }
 
     public Map<String, String> getScopeMappings() {
         return scopeMappings;

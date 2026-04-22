@@ -29,7 +29,7 @@ By default, securing individual GraphQL fields in Spring Boot requires either cu
 
 - Schema-driven access control via the `@requiresScopes` GraphQL directive
 - OR-of-AND scope evaluation semantics (Apollo Federation compatible)
-- Three built-in scope check strategies covering common authority conventions
+- Two built-in scope check strategies covering common authority conventions
 - Extensible `ScopeCheckStrategy` SPI for custom authority matching logic
 - Spring Boot auto-configuration with sensible defaults
 - Zero overhead on fields without `@requiresScopes`
@@ -92,13 +92,22 @@ spring:
   security:
     graphql:
       requiresscopes:
-        role-authority-prefix: ROLE_   # authority prefix for "role:" scopes (default: ROLE_)
         scope-mappings:
           feature: FEATURE_            # "feature:PRICING" → checks for authority "FEATURE_PRICING"
-          roles: ROLE_                 # "roles:ADMIN"     → checks for authority "ROLE_ADMIN"
 ```
 
 The `scope-mappings` key is the scope type name **without** the trailing colon — the library appends it automatically.
+
+A `"role:"` entry is **auto-registered** by the starter using the prefix from Spring Security's `GrantedAuthorityDefaults` bean (or the default `"ROLE_"` if none is declared). To customise the role prefix, declare a `GrantedAuthorityDefaults` bean:
+
+```java
+@Bean
+public GrantedAuthorityDefaults grantedAuthorityDefaults() {
+    return new GrantedAuthorityDefaults("ACCESS_");
+}
+```
+
+A user-supplied `role:` entry in `scope-mappings` overrides the auto-registered one.
 
 ---
 
@@ -134,11 +143,11 @@ Spring's exception handling translates `AccessDeniedException` into a GraphQL er
 
 For every scope string the instrumentation calls each registered `ScopeCheckStrategy` in order, short-circuiting on the first `true`.
 
-Three strategies are auto-configured:
+Two strategies are auto-configured:
 
 #### Strategy 1 — `SimpleAuthorityMatchStrategy`
 
-Checks whether the scope value appears **verbatim** in `Authentication.getAuthorities()` (case-insensitive):
+Checks whether the scope value appears **verbatim** in `Authentication.getAuthorities()`:
 
 ```
 scope "feature:PRICING"
@@ -147,30 +156,13 @@ scope "feature:PRICING"
 
 Useful when the `JwtAuthenticationConverter` is configured to produce authorities that already contain the full scope string including the type prefix.
 
-#### Strategy 2 — `RolePrefixAuthorityMatchStrategy`
+#### Strategy 2 — `ClaimPrefixMappingStrategy`
 
-Handles `role:` scopes specifically. Strips the `"role:"` prefix and prepends the configured role authority prefix:
-
-```
-scope "role:ADMIN"
-  → strip "role:"  →  "ADMIN"
-  → prepend role authority prefix  →  "ROLE_ADMIN"
-  → getAuthorities() contains "ROLE_ADMIN" ?
-```
-
-**Role authority prefix resolution order:**
-
-1. `GrantedAuthorityDefaults` bean — if the application has defined one
-2. `spring.security.graphql.requiresscopes.role-authority-prefix` property
-3. Default: `ROLE_`
-
-#### Strategy 3 — `ClaimPrefixMappingStrategy`
-
-Uses the `scope-mappings` property to transform any scope type prefix into its corresponding authority prefix:
+Transforms any scope type prefix into its corresponding authority prefix and checks the result against `Authentication.getAuthorities()`. The prefix map combines an auto-registered `"role:"` entry with every entry from the `scope-mappings` property:
 
 ```
 scope "feature:PRICING"
-  → scope-mappings: { "feature:" → "FEATURE_" }
+  → prefix map: { "role:" → "ROLE_", "feature:" → "FEATURE_" }
   → strip "feature:"  →  "PRICING"
   → prepend "FEATURE_"  →  "FEATURE_PRICING"
   → getAuthorities() contains "FEATURE_PRICING" ?
@@ -178,13 +170,20 @@ scope "feature:PRICING"
 
 Prefix matching iterates the map in declaration order — the first matching entry wins. If no entry matches the scope prefix, the strategy returns `false`.
 
+**Role authority prefix resolution** (used for the auto-registered `"role:"` entry):
+
+1. `GrantedAuthorityDefaults` bean — if the application has defined one
+2. Spring Security's default: `"ROLE_"`
+
+A user-supplied `role:` entry in `scope-mappings` overrides the auto-registered one (the autoconfig inserts the auto-registered entry first, then overlays `scope-mappings`).
+
 ---
 
 ## Customisation
 
 ### Add a Custom Strategy
 
-Implement `ScopeCheckStrategy` and register it as a Spring bean — it is picked up automatically alongside the three defaults:
+Implement `ScopeCheckStrategy` and register it as a Spring bean — it is picked up automatically alongside the two defaults:
 
 ```java
 @Bean
@@ -221,15 +220,13 @@ public RequiresScopesInstrumentation requiresScopesInstrumentation(List<ScopeChe
 
 - **`RequiresScopesInstrumentation`** — Extends `SimplePerformantInstrumentation`. Wraps every field's `DataFetcher` via `instrumentDataFetcher`. Fields without `@requiresScopes` are returned unchanged (zero overhead). The `scopes` argument is extracted once outside the returned lambda, so the AST walk happens per-field-definition, not per-fetch.
 - **`ScopeCheckStrategy`** — SPI interface: `check(Authentication, String) -> boolean`. Strategies are tried in the order Spring injects them and short-circuit on first `true`.
-- **`SimpleAuthorityMatchStrategy`** — Verbatim case-insensitive authority match.
-- **`RolePrefixAuthorityMatchStrategy`** — Strips the `"role:"` prefix and prepends the configured role authority prefix.
-- **`ClaimPrefixMappingStrategy`** — Map-driven prefix transformation built from the `scope-mappings` property.
+- **`SimpleAuthorityMatchStrategy`** — Verbatim authority match.
+- **`ClaimPrefixMappingStrategy`** — Map-driven prefix transformation built from the auto-registered `"role:"` entry plus the `scope-mappings` property.
 
 ### spring-security-graphql-requiresscopes-starter
 
 `SchemaSecurityAutoConfiguration` creates the following beans (each guarded by `@ConditionalOnMissingBean` on its concrete class):
 
 1. **`SimpleAuthorityMatchStrategy`** — Exact authority match, no configuration required.
-2. **`RolePrefixAuthorityMatchStrategy`** — Resolves the role prefix from `GrantedAuthorityDefaults` bean, the `role-authority-prefix` property, or the default `ROLE_`.
-3. **`ClaimPrefixMappingStrategy`** — Built from the `scope-mappings` property. The same map also drives the auto-configured `JwtAuthenticationConverter`.
-4. **`JwtAuthenticationConverter`** — One `JwtGrantedAuthoritiesConverter` per `scope-mappings` entry, using the map key as the JWT claim name and the map value as the authority prefix. Only registered when no `JwtAuthenticationConverter` bean is present.
+2. **`ClaimPrefixMappingStrategy`** — Built from a combined `LinkedHashMap` containing the auto-registered `"role:"` entry (prefix resolved from the `GrantedAuthorityDefaults` bean, or Spring Security's default `"ROLE_"` if none is declared) followed by every `scope-mappings` entry. A user-supplied `role:` entry in `scope-mappings` overrides the auto-registered one. The `scope-mappings` portion also drives the auto-configured `JwtAuthenticationConverter`.
+3. **`JwtAuthenticationConverter`** — One `JwtGrantedAuthoritiesConverter` per `scope-mappings` entry, using the map key as the JWT claim name and the map value as the authority prefix. Only registered when no `JwtAuthenticationConverter` bean is present.

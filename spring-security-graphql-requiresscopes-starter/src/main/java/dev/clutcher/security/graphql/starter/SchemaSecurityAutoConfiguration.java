@@ -2,9 +2,9 @@ package dev.clutcher.security.graphql.starter;
 
 import dev.clutcher.security.graphql.instrumentation.RequiresScopesInstrumentation;
 import dev.clutcher.security.graphql.strategy.ClaimPrefixMappingStrategy;
-import dev.clutcher.security.graphql.strategy.RolePrefixAuthorityMatchStrategy;
 import dev.clutcher.security.graphql.strategy.ScopeCheckStrategy;
 import dev.clutcher.security.graphql.strategy.SimpleAuthorityMatchStrategy;
+import org.jspecify.annotations.NonNull;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -36,21 +36,17 @@ public class SchemaSecurityAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnMissingBean(RolePrefixAuthorityMatchStrategy.class)
-    public RolePrefixAuthorityMatchStrategy rolePrefixAuthorityMatchStrategy(
+    @ConditionalOnMissingBean(ClaimPrefixMappingStrategy.class)
+    public ClaimPrefixMappingStrategy claimPrefixMappingStrategy(
             Optional<GrantedAuthorityDefaults> grantedAuthorityDefaults,
             RequiresScopesProperties properties) {
+
         String rolePrefix = grantedAuthorityDefaults
                 .map(GrantedAuthorityDefaults::getRolePrefix)
-                .orElseGet(properties::getRoleAuthorityPrefix);
-        return new RolePrefixAuthorityMatchStrategy("role:", rolePrefix);
-    }
+                .orElse("ROLE_");
 
-    @Bean
-    @ConditionalOnMissingBean(ClaimPrefixMappingStrategy.class)
-    public ClaimPrefixMappingStrategy claimPrefixMappingStrategy(RequiresScopesProperties properties) {
-        Map<String, String> mappings = new LinkedHashMap<>();
-        properties.getScopeMappings().forEach((key, value) -> mappings.put(key + ":", value));
+        Map<String, String> mappings = createClaimPrefixMapping(properties, rolePrefix);
+
         return new ClaimPrefixMappingStrategy(mappings);
     }
 
@@ -63,6 +59,16 @@ public class SchemaSecurityAutoConfiguration {
         JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
         jwtConverter.setJwtGrantedAuthoritiesConverter(aggregatedConverter);
         return jwtConverter;
+    }
+
+    private static @NonNull Map<String, String> createClaimPrefixMapping(
+            RequiresScopesProperties properties,
+            String rolePrefix
+    ) {
+        Map<String, String> mappings = new LinkedHashMap<>();
+        mappings.put("role:", rolePrefix);
+        properties.getScopeMappings().forEach((key, value) -> mappings.put(key + ":", value));
+        return mappings;
     }
 
     private static List<Converter<Jwt, Collection<GrantedAuthority>>> buildAuthoritiesConverters(

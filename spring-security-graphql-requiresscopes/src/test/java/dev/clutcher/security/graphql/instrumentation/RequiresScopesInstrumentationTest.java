@@ -1,7 +1,6 @@
 package dev.clutcher.security.graphql.instrumentation;
 
 import dev.clutcher.security.graphql.strategy.ClaimPrefixMappingStrategy;
-import dev.clutcher.security.graphql.strategy.RolePrefixAuthorityMatchStrategy;
 import dev.clutcher.security.graphql.strategy.ScopeCheckStrategy;
 import dev.clutcher.security.graphql.strategy.SimpleAuthorityMatchStrategy;
 import graphql.ExecutionInput;
@@ -44,8 +43,7 @@ class RequiresScopesInstrumentationTest {
 
     private final List<ScopeCheckStrategy> strategies = List.of(
             new SimpleAuthorityMatchStrategy(),
-            new RolePrefixAuthorityMatchStrategy("role:", "ROLE_"),
-            new ClaimPrefixMappingStrategy(Map.of("feature:", "FEATURE_"))
+            new ClaimPrefixMappingStrategy(Map.of("role:", "ROLE_", "feature:", "FEATURE_"))
     );
 
     @Test
