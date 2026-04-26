@@ -13,7 +13,7 @@ extra["springBootVersion"] = "4.0.2"
 
 allprojects {
     group = "dev.clutcher.spring-security"
-    version = "1.0.0"
+    version = "1.1.0"
 }
 
 configureJReleaser()
