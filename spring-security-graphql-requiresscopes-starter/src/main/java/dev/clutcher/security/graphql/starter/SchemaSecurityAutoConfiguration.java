@@ -1,5 +1,6 @@
 package dev.clutcher.security.graphql.starter;
 
+import dev.clutcher.security.graphql.instrumentation.AuthenticatedInstrumentation;
 import dev.clutcher.security.graphql.instrumentation.RequiresScopesInstrumentation;
 import dev.clutcher.security.graphql.strategy.ScopeCheckStrategy;
 import dev.clutcher.security.graphql.strategy.impl.ClaimPrefixMappingStrategy;
@@ -147,6 +148,12 @@ public class SchemaSecurityAutoConfiguration {
         public RequiresScopesInstrumentation requiresScopesInstrumentation(
                 List<ScopeCheckStrategy> strategies) {
             return new RequiresScopesInstrumentation(strategies);
+        }
+
+        @Bean
+        @ConditionalOnMissingBean(AuthenticatedInstrumentation.class)
+        public AuthenticatedInstrumentation authenticatedInstrumentation() {
+            return new AuthenticatedInstrumentation();
         }
     }
 
