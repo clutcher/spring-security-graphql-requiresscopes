@@ -1,4 +1,5 @@
 # CLAUDE.md
+# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -19,10 +20,10 @@ Gradle multi-project build. Java toolchain 24, Spring Boot 4.0.2, graphql-java 2
 
 Two-module Gradle build publishing two Maven artifacts under `dev.clutcher.security`:
 
-- **`spring-security-graphql-requiresscopes`** — core library. Contains the `ScopeCheckStrategy` SPI, three strategy implementations (`SimpleAuthorityMatchStrategy`, `ScopePrefixAuthorityMatchStrategy`, `ClaimPrefixMappingStrategy`), the `AuthorityMatcher` helper, and `RequiresScopesInstrumentation`. Dependencies on Spring Security and graphql-java are `compileOnly` — the consuming app supplies them.
+- **`spring-security-graphql-requiresscopes`** — core library. Contains the `ScopeCheckStrategy` SPI, three strategy implementations (`SimpleAuthorityMatchStrategy`, `ScopePrefixAuthorityMatchStrategy`, `ClaimPrefixMappingStrategy`), the `AuthorityMatcher` helper, `RequiresScopesInstrumentation`, and `AuthenticatedInstrumentation`. Dependencies on Spring Security and graphql-java are `compileOnly` — the consuming app supplies them.
 - **`spring-security-graphql-requiresscopes-starter`** — Spring Boot autoconfig. `api`-depends on the core module. Registered via `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`.
 
-### Enforcement flow
+### Enforcement flow — `@requiresScopes`
 
 `RequiresScopesInstrumentation` extends `SimplePerformantInstrumentation` and wraps every field's `DataFetcher` via `instrumentDataFetcher`. If the field definition has no `@requiresScopes` applied directive, the fetcher is returned unchanged (zero overhead). Otherwise the `scopes` argument is extracted once (outside the returned lambda, so the AST walk happens per-field-definition, not per-fetch) and a wrapping fetcher enforces scopes before delegating.
 
@@ -31,6 +32,12 @@ The `scopes` argument can arrive as an AST literal (`ArrayValue` of `ArrayValue`
 Evaluation is OR-of-AND (Apollo Federation semantics): outer list = OR, inner list = AND. A single scope passes if **any** `ScopeCheckStrategy` in the injected list returns true. On failure: `AccessDeniedException("Access denied: insufficient scopes")` — Spring translates this into a GraphQL error; no extra wiring required.
 
 `Authentication` is read from the GraphQL context under key `SecurityContext.class.getName()` — populated by Spring Security's GraphQL integration upstream.
+
+### Enforcement flow — `@authenticated`
+
+`AuthenticatedInstrumentation` extends `SimplePerformantInstrumentation` and wraps every field's `DataFetcher` the same way. If the field definition has no `@authenticated` applied directive, the fetcher is returned unchanged (zero overhead). Otherwise a wrapping fetcher resolves `Authentication` from the GraphQL context (same `SecurityContext.class.getName()` key as `RequiresScopesInstrumentation`) and denies access when **any** of the following is true: the `SecurityContext` is missing, `Authentication` is null, `isAuthenticated()` returns false, or the token is an `AnonymousAuthenticationToken`. On failure: `AccessDeniedException("Access denied: authentication required")`.
+
+There is no SPI or strategy layer for `@authenticated` — the predicate is fixed (anonymous/null/unauthenticated → deny). The directive carries no arguments; the SDL declaration is simply `directive @authenticated on FIELD_DEFINITION`. `@requiresScopes` and `@authenticated` compose freely on the same field: each instrumentation wraps independently, and both must pass for the fetcher to run.
 
 ### Strategy SPI
 
@@ -62,18 +69,18 @@ To customise the role authority prefix, declare a `GrantedAuthorityDefaults` bea
 
 ## Package layout (core library)
 
-- `graphql.instrumentation` — `RequiresScopesInstrumentation`
+- `graphql.instrumentation` — `RequiresScopesInstrumentation`, `AuthenticatedInstrumentation`
 - `graphql.strategy` — `ScopeCheckStrategy` SPI interface only
 - `graphql.strategy.impl` — `SimpleAuthorityMatchStrategy`, `ScopePrefixAuthorityMatchStrategy`, `ClaimPrefixMappingStrategy`
 - `graphql.utils` — `AuthorityMatcher` (shared authority-comparison rule)
 
-New strategy implementations go in `strategy/impl/`. Anything shared across strategies goes in `utils/`.
+New strategy implementations go in `strategy/impl/`. Anything shared across strategies goes in `utils/`. New directive-driven instrumentations go in `instrumentation/`.
 
 ## Conventions
 
-- No comments in production or test code. Javadoc only where the WHY is genuinely non-obvious — `AuthorityMatcher` (matching rule rationale), `ScopeCheckStrategy` (how to register custom implementations), `RequiresScopesInstrumentation` (context key). Do not add Javadoc to straightforward implementations.
+- No comments in production or test code. Javadoc only where the WHY is genuinely non-obvious — `AuthorityMatcher` (matching rule rationale), `ScopeCheckStrategy` (how to register custom implementations), `RequiresScopesInstrumentation` (context key), `AuthenticatedInstrumentation` (denial predicate rationale). Do not add Javadoc to straightforward implementations.
 - Tests use JUnit 5. Naming: `should<Outcome>When<Condition>`, with `// Given / // When / // Then` structure. Use `TestingAuthenticationToken` to construct `Authentication` — see `SimpleAuthorityMatchStrategyTest` as the reference pattern.
-- `RequiresScopesInstrumentationTest` tests via real GraphQL schema execution (SDL parsed at test time, no mocks). Use this pattern for any instrumentation-level test — mocking `DataFetchingEnvironment` and `GraphQLAppliedDirective` is impractical.
+- `RequiresScopesInstrumentationTest` and `AuthenticatedInstrumentationTest` test via real GraphQL schema execution (SDL parsed at test time, no mocks). Use this pattern for any instrumentation-level test — mocking `DataFetchingEnvironment` and `GraphQLAppliedDirective` is impractical.
 - Core library must stay framework-thin: add Spring/graphql-java deps as `compileOnly` in `spring-security-graphql-requiresscopes/build.gradle.kts`, and mirror them as `testImplementation`. Runtime/`implementation` deps belong in the starter module.
 - Adding a property to `RequiresScopesProperties` automatically generates IDE completion metadata via `spring-boot-configuration-processor` (already wired in the starter's `build.gradle.kts`).
 - Version is set once in the root `build.gradle.kts` (`allprojects { version = ... }`); do not set per-subproject.

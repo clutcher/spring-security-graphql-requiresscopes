@@ -1,6 +1,6 @@
 # Spring Security GraphQL RequiresScopes
 
-A Spring Boot library that enforces `@requiresScopes` directives declared in a GraphQL schema at field-execution time — no per-controller annotations required.
+A Spring Boot library that enforces `@requiresScopes` and `@authenticated` directives declared in a GraphQL schema at field-execution time — no per-controller annotations required.
 
 ---
 
@@ -20,6 +20,7 @@ A Spring Boot library that enforces `@requiresScopes` directives declared in a G
 5. [How It Works](#how-it-works)
     - [Scope Evaluation](#scope-evaluation)
     - [Built-in Strategies](#built-in-strategies)
+    - [Authenticated Directive](#authenticated-directive)
 6. [Cross-compatibility with Apollo Router / Hive Gateway](#cross-compatibility-with-apollo-router--hive-gateway)
 7. [End-to-End Example](#end-to-end-example)
 8. [Customisation](#customisation)
@@ -31,7 +32,7 @@ A Spring Boot library that enforces `@requiresScopes` directives declared in a G
 
 ## Overview
 
-This library adds support for the `@requiresScopes` GraphQL directive — defined by [Apollo Federation](https://www.apollographql.com/docs/graphos/reference/federation/directives) and used by Apollo Router and Hive Gateway — to Spring GraphQL applications. The directive semantics (OR-of-AND scope matrix, case-sensitive comparison) are preserved; scopes are resolved against Spring Security's `Authentication.getAuthorities()` rather than an OAuth2 `scope` claim in the JWT.
+This library adds support for the `@requiresScopes` and `@authenticated` GraphQL directives — defined by [Apollo Federation](https://www.apollographql.com/docs/graphos/reference/federation/directives) and used by Apollo Router and Hive Gateway — to Spring GraphQL applications. The directive semantics (OR-of-AND scope matrix, case-sensitive comparison) are preserved; scopes are resolved against Spring Security's `Authentication.getAuthorities()` rather than an OAuth2 `scope` claim in the JWT. `@authenticated` denies access when the caller is anonymous or unauthenticated.
 
 With default Spring Security, Apollo-shaped schemas — `@requiresScopes(scopes: [["admin"]])` — just work: Spring Security produces a `SCOPE_admin` authority from the JWT `scope` claim, and the library's new `ScopePrefixAuthorityMatchStrategy` bridges the raw Apollo scope to the prefixed authority without requiring any configuration.
 
@@ -39,14 +40,14 @@ Without this library, securing individual GraphQL fields in Spring Boot requires
 
 ### Key Features
 
-- Schema-driven access control via the Federation `@requiresScopes` directive
+- Schema-driven access control via the Federation `@requiresScopes` and `@authenticated` directives
 - OR-of-AND scope evaluation semantics (Apollo Federation compatible)
 - Strict case-sensitive scope/authority matching — aligned with RFC 6749, Apollo Router, and Spring Security
 - Zero-config interoperability with Apollo-shaped schemas on default Spring Security
 - Three built-in scope check strategies covering common authority conventions
 - Extensible `ScopeCheckStrategy` SPI for custom authority matching logic
 - Spring Boot auto-configuration that respects Spring Security's JWT properties
-- Zero overhead on fields without `@requiresScopes`
+- Zero overhead on fields without `@requiresScopes` or `@authenticated`
 
 ---
 
@@ -54,8 +55,8 @@ Without this library, securing individual GraphQL fields in Spring Boot requires
 
 This project consists of two libraries:
 
-- **`spring-security-graphql-requiresscopes`** — Core library: `ScopeCheckStrategy` interface, built-in strategy implementations, the `AuthorityMatcher` helper, and `RequiresScopesInstrumentation`
-- **`spring-security-graphql-requiresscopes-starter`** — Spring Boot starter: auto-configures the default strategies and registers the instrumentation
+- **`spring-security-graphql-requiresscopes`** — Core library: `ScopeCheckStrategy` interface, built-in strategy implementations, the `AuthorityMatcher` helper, `RequiresScopesInstrumentation`, and `AuthenticatedInstrumentation`
+- **`spring-security-graphql-requiresscopes-starter`** — Spring Boot starter: auto-configures the default strategies and registers both instrumentations
 
 ---
 
@@ -83,12 +84,16 @@ implementation("dev.clutcher.security:spring-security-graphql-requiresscopes-sta
 
 ### Basic Usage
 
-Declare the directive in your GraphQL schema and apply it to fields. Scope values can use the Apollo-compatible shape (raw tokens) or this library's Spring-specific extension (`type:VALUE` prefix convention):
+Declare the directives in your GraphQL schema and apply them to fields. Scope values can use the Apollo-compatible shape (raw tokens) or this library's Spring-specific extension (`type:VALUE` prefix convention). `@authenticated` takes no arguments and simply requires a non-anonymous, authenticated caller:
 
 ```graphql
 directive @requiresScopes(scopes: [[String!]!]!) on FIELD_DEFINITION
+directive @authenticated on FIELD_DEFINITION
 
 type Query {
+    # Any logged-in user, no scope check.
+    profile: Profile @authenticated
+
     # Apollo-compatible: raw OAuth2 scope tokens. Works against Spring Security's SCOPE_* authorities.
     pricing: PricingData @requiresScopes(scopes: [["admin"]])
 
@@ -97,6 +102,9 @@ type Query {
 
     # Mixed: any AND group can use either convention.
     dashboard: Dashboard @requiresScopes(scopes: [["feature:PRICING", "role:ADMIN"], ["admin"]])
+
+    # Directives compose: caller must be authenticated AND have the scope.
+    auditLog: AuditLog @authenticated @requiresScopes(scopes: [["role:ADMIN"]])
 }
 ```
 
@@ -291,6 +299,42 @@ Prefix matching iterates the map in declaration order — the first matching ent
 2. Spring Security's default: `"ROLE_"`
 
 A user-supplied `role:` entry in `scope-mappings` overrides the auto-registered one (the autoconfig inserts the auto-registered entry first, then overlays `scope-mappings`).
+
+### Authenticated Directive
+
+`@authenticated` is a parameterless field directive that gates access on whether the caller is authenticated at all — independent of any scopes or authorities. Declare it in the schema:
+
+```graphql
+directive @authenticated on FIELD_DEFINITION
+
+type Query {
+    profile: Profile @authenticated
+}
+```
+
+The library's `AuthenticatedInstrumentation` wraps every field's `DataFetcher`. Fields without `@authenticated` are returned unchanged (zero overhead). On a field that carries the directive, the wrapping fetcher resolves `Authentication` from the GraphQL context and denies access when **any** of the following holds:
+
+- No `SecurityContext` is present in the GraphQL context
+- `Authentication` is `null`
+- `Authentication.isAuthenticated()` returns `false`
+- The token is an `AnonymousAuthenticationToken`
+
+| Outcome | Result |
+|---|---|
+| Caller is authenticated and not anonymous | `DataFetcher` executes normally |
+| Caller is anonymous, missing, or unauthenticated | `AccessDeniedException("Access denied: authentication required")` |
+
+Spring's exception handling translates `AccessDeniedException` into a GraphQL error response — same flow as `@requiresScopes`.
+
+`@authenticated` and `@requiresScopes` compose freely on the same field. Each directive is enforced by an independent instrumentation, and both must pass for the original `DataFetcher` to run:
+
+```graphql
+type Query {
+    auditLog: AuditLog @authenticated @requiresScopes(scopes: [["role:ADMIN"]])
+}
+```
+
+The directive carries no arguments and has no SPI — the predicate (anonymous/null/unauthenticated → deny) is fixed.
 
 ---
 
@@ -552,6 +596,12 @@ public RequiresScopesInstrumentation requiresScopesInstrumentation(List<ScopeChe
 - Check the case of the value part: `"role:ADMIN"` resolves to authority `"ROLE_ADMIN"` (strict equals); `"role:admin"` resolves to `"ROLE_admin"` and will NOT match `"ROLE_ADMIN"`.
 - If you configured a custom role prefix via `GrantedAuthorityDefaults`, confirm the JWT converter is producing authorities with that prefix (the library reads `GrantedAuthorityDefaults` automatically, but your `JwtAuthenticationConverter` must also be applying it).
 
+**`@authenticated` denies a request that I expected to pass**
+
+- Confirm the `Authorization: Bearer <token>` header is reaching the server and the JWT decodes successfully — without a valid token Spring Security installs an `AnonymousAuthenticationToken`, which `@authenticated` rejects by design.
+- The directive denies on `null`, `!isAuthenticated()`, **and** `AnonymousAuthenticationToken`. A custom `AuthenticationManager` that returns an `AnonymousAuthenticationToken` for valid users will still be denied — return a non-anonymous token (e.g. `JwtAuthenticationToken`, `UsernamePasswordAuthenticationToken`) instead.
+- Make sure the `SecurityContext` is populated in the GraphQL context. Spring Security's GraphQL integration handles this upstream; a custom WebGraphQlInterceptor that bypasses it will leave the context empty and `@authenticated` will deny.
+
 **My JWT has a `roles` claim but those roles don't appear as authorities**
 
 - Spring Security's default converter reads only the `scope`/`scp` claim. To have `roles` claim entries become authorities, either set `spring.security.oauth2.resourceserver.jwt.authorities-claim-name=roles` (single-claim override, Spring Boot built-in) or add `roles: ROLE_` to `scope-mappings` (multi-claim, additive via this library).
@@ -575,6 +625,7 @@ public RequiresScopesInstrumentation requiresScopesInstrumentation(List<ScopeChe
 ### spring-security-graphql-requiresscopes
 
 - **`RequiresScopesInstrumentation`** — Extends `SimplePerformantInstrumentation`. Wraps every field's `DataFetcher` via `instrumentDataFetcher`. Fields without `@requiresScopes` are returned unchanged (zero overhead). The `scopes` argument is extracted once outside the returned lambda, so the AST walk happens per-field-definition, not per-fetch.
+- **`AuthenticatedInstrumentation`** — Extends `SimplePerformantInstrumentation`. Wraps every field's `DataFetcher`; fields without `@authenticated` are returned unchanged (zero overhead). Resolves `Authentication` from the GraphQL context and denies access when the caller is anonymous, missing, or unauthenticated. No SPI: the predicate is fixed.
 - **`ScopeCheckStrategy`** — SPI interface: `check(Authentication, String) -> boolean`. Strategies are tried in the order Spring injects them and short-circuit on first `true`.
 - **`SimpleAuthorityMatchStrategy`** — Delegates to `AuthorityMatcher`: passes if any authority equals the scope value verbatim (case-sensitive).
 - **`ScopePrefixAuthorityMatchStrategy`** — Prepends a configured authority prefix to the scope, then delegates to `AuthorityMatcher`. Bridges Apollo-style raw scopes to Spring Security's prefixed authorities.
@@ -589,6 +640,8 @@ public RequiresScopesInstrumentation requiresScopesInstrumentation(List<ScopeChe
 2. **`ScopePrefixAuthorityMatchStrategy`** — Registered when `spring.security.oauth2.resourceserver.jwt.authorities-claim-name` is unset, `"scope"`, or `"scp"`. Constructed with `OAuth2ResourceServerProperties.Jwt.authorityPrefix` (default `"SCOPE_"`).
 3. **`ClaimPrefixMappingStrategy`** — Always registered. Built from a combined `LinkedHashMap` containing the auto-registered `"role:"` entry (prefix resolved from the `GrantedAuthorityDefaults` bean, or Spring Security's default `"ROLE_"` if none is declared) followed by every `scope-mappings` entry. A user-supplied `role:` entry in `scope-mappings` overrides the auto-registered one.
 4. **`JwtAuthenticationConverter`** — Registered **only when `scope-mappings` is non-empty**. Otherwise Spring Security's default pipeline applies. When registered, the converter composes: first, a `JwtGrantedAuthoritiesConverter` mirroring Spring Security's defaults but seeded from `OAuth2ResourceServerProperties.Jwt` (respects user-set `authority-prefix`, `authorities-claim-name`, `authorities-claim-delimiter`); then, one per `scope-mappings` entry. This ensures `scope-mappings` is additive on top of the default converter, never a replacement.
+5. **`RequiresScopesInstrumentation`** — Always registered when graphql-java is on the classpath. Constructed with the injected list of `ScopeCheckStrategy` beans.
+6. **`AuthenticatedInstrumentation`** — Always registered when graphql-java is on the classpath. No configuration required.
 
 ---
 
